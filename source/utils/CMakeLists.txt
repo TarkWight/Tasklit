@@ -2,9 +2,12 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui)
 
 add_library(utils
   json_utils.hpp
+  Logger.hpp
+  Logger.cpp
 )
 
 target_link_libraries(utils PUBLIC
+  Qt6::HttpServer
   Qt6::Core
   Qt6::Gui
 )
