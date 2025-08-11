@@ -9,6 +9,7 @@ target_link_libraries(storage
         Qt6::Core
         Qt6::Sql
         model
+        utils
 )
 
 target_include_directories(storage

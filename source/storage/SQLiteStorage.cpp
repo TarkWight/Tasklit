@@ -5,12 +5,15 @@
 #include <QtSql/QSqlRecord>
 #include <QVariant>
 #include <QJsonArray>
-#include <QDebug>
+
+#include "Logger.hpp"
 
 namespace {
 
 bool ensureSchema(QSqlDatabase db) {
     QSqlQuery q(db);
+
+    qInfo(appSql) << "Ensuring DB schema...";
 
     // tasks
     if (!q.exec(
@@ -21,7 +24,7 @@ bool ensureSchema(QSqlDatabase db) {
             "  completed INTEGER NOT NULL DEFAULT 0"
             ");"
             )) {
-        qWarning() << "schema tasks:" << q.lastError();
+        qCritical(appSql) << "schema tasks:" << q.lastError().text();
         return false;
     }
 
@@ -32,7 +35,7 @@ bool ensureSchema(QSqlDatabase db) {
             "  name TEXT NOT NULL UNIQUE"
             ");"
             )) {
-        qWarning() << "schema tags:" << q.lastError();
+        qCritical(appSql) << "schema tags:" << q.lastError().text();
         return false;
     }
 
@@ -46,10 +49,11 @@ bool ensureSchema(QSqlDatabase db) {
             "  FOREIGN KEY(tag_id)  REFERENCES tags(id)  ON DELETE CASCADE"
             ");"
             )) {
-        qWarning() << "schema task_tags:" << q.lastError();
+        qCritical(appSql) << "schema task_tags:" << q.lastError().text();
         return false;
     }
 
+    qInfo(appSql) << "Schema OK";
     return true;
 }
 
@@ -67,7 +71,7 @@ static QList<Tag> fetchTagsForTask(QSqlDatabase db, qint64 taskId) {
     q.addBindValue(taskId);
 
     if (!q.exec()) {
-        qWarning() << "fetchTagsForTask:" << q.lastError();
+        qWarning(appSql) << "fetchTagsForTask:" << q.lastError().text();
         return out;
     }
 
@@ -78,6 +82,7 @@ static QList<Tag> fetchTagsForTask(QSqlDatabase db, qint64 taskId) {
         out.append(t);
     }
 
+    qInfo(appSql) << "Fetched" << out.size() << "tags for task" << taskId;
     return out;
 }
 
@@ -89,33 +94,35 @@ static QList<qint64> upsertTagsByName(QSqlDatabase db, const QList<Tag>& tags) {
     ins.prepare("INSERT INTO tags(name) VALUES(?)");
 
     for (const auto& t : tags) {
-        // по имени
         sel.bindValue(0, t.name);
 
         if (!sel.exec()) {
-            qWarning() << "tag select:" << sel.lastError();
+            qWarning(appSql) << "tag select:" << sel.lastError().text();
             continue;
         }
 
         if (sel.next()) {
-            ids.append(sel.value(0).toLongLong());
+            auto id = sel.value(0).toLongLong();
+            ids.append(id);
+            qInfo(appSql) << "Tag exists:" << t.name << "id=" << id;
             continue;
         }
 
         ins.bindValue(0, t.name);
 
         if (!ins.exec()) {
-            qWarning() << "tag insert:" << ins.lastError();
+            qWarning(appSql) << "tag insert failed:" << ins.lastError().text();
+            // ещё раз селект
             sel.bindValue(0, t.name);
-
             if (sel.exec() && sel.next()) {
                 ids.append(sel.value(0).toLongLong());
             }
-
             continue;
         }
 
-        ids.append(ins.lastInsertId().toLongLong());
+        auto newId = ins.lastInsertId().toLongLong();
+        ids.append(newId);
+        qInfo(appSql) << "Tag inserted:" << t.name << "id=" << newId;
     }
 
     return ids;
@@ -125,7 +132,7 @@ static bool replaceTaskTags(QSqlDatabase db, qint64 taskId, const QList<qint64>&
     QSqlQuery del(db), add(db);
 
     if (!del.exec(QStringLiteral("DELETE FROM task_tags WHERE task_id = %1").arg(taskId))) {
-        qWarning() << "clear task_tags:" << del.lastError();
+        qWarning(appSql) << "clear task_tags:" << del.lastError().text();
         return false;
     }
 
@@ -135,12 +142,12 @@ static bool replaceTaskTags(QSqlDatabase db, qint64 taskId, const QList<qint64>&
         add.bindValue(0, taskId);
         add.bindValue(1, id);
         if (!add.exec()) {
-            qWarning() << "add tag link:" << add.lastError();
-
+            qWarning(appSql) << "add tag link:" << add.lastError().text();
             return false;
         }
     }
 
+    qInfo(appSql) << "Updated" << tagIds.size() << "tag links for task" << taskId;
     return true;
 }
 
@@ -150,7 +157,6 @@ static Task rowToTask(const QSqlRecord& r) {
     t.title = r.value("title").toString();
     t.description = r.value("description").toString();
     t.completed = r.value("completed").toInt() != 0;
-
     return t;
 }
 
@@ -161,23 +167,25 @@ SQLiteStorage::SQLiteStorage(const QString &dbPath) {
     m_db.setDatabaseName(dbPath);
 
     if (!m_db.open()) {
-        qWarning() << "Failed to open database:" << m_db.lastError().text();
+        qCritical(appSql) << "Failed to open database:" << m_db.lastError().text();
         return;
     }
 
     if (!ensureSchema(m_db)) {
-        qWarning() << "Failed to init schema";
+        qCritical(appSql) << "Failed to init schema";
     }
 
     QSqlQuery pragma(m_db);
     pragma.exec("PRAGMA foreign_keys = ON;");
+    qInfo(appSql) << "SQLiteStorage ready, path:" << dbPath;
 }
 
 std::vector<Task> SQLiteStorage::getAllTasks() const {
+    qInfo(appSql) << "Query: getAllTasks()";
     std::vector<Task> out;
     QSqlQuery q(m_db);
     if (!q.exec("SELECT id, title, description, completed FROM tasks ORDER BY id ASC")) {
-        qWarning() << "getAllTasks:" << q.lastError();
+        qWarning(appSql) << "getAllTasks:" << q.lastError().text();
         return out;
     }
 
@@ -187,20 +195,23 @@ std::vector<Task> SQLiteStorage::getAllTasks() const {
         out.push_back(std::move(t));
     }
 
+    qInfo(appSql) << "→" << out.size() << "tasks fetched";
     return out;
 }
 
 std::optional<Task> SQLiteStorage::getTaskById(qint64 id) const {
+    qInfo(appSql) << "Query: getTaskById id=" << id;
     QSqlQuery q(m_db);
     q.prepare("SELECT id, title, description, completed FROM tasks WHERE id = ?");
     q.addBindValue(id);
 
     if (!q.exec()) {
-        qWarning() << "getTaskById:" << q.lastError();
+        qWarning(appSql) << "getTaskById:" << q.lastError().text();
         return std::nullopt;
     }
 
     if (!q.next()) {
+        qInfo(appSql) << "Task not found id=" << id;
         return std::nullopt;
     }
 
@@ -211,10 +222,11 @@ std::optional<Task> SQLiteStorage::getTaskById(qint64 id) const {
 }
 
 qint64 SQLiteStorage::addTask(const Task &task) {
+    qInfo(appSql) << "Insert task title=" << task.title << "tags=" << task.tags.size();
     QSqlQuery q(m_db);
 
     if (!m_db.transaction()) {
-        qWarning() << "tx begin:" << m_db.lastError();
+        qWarning(appSql) << "tx begin:" << m_db.lastError().text();
     }
 
     q.prepare("INSERT INTO tasks(title, description, completed) VALUES(?, ?, ?)");
@@ -223,14 +235,12 @@ qint64 SQLiteStorage::addTask(const Task &task) {
     q.addBindValue(task.completed ? 1 : 0);
 
     if (!q.exec()) {
-        qWarning() << "addTask:" << q.lastError();
+        qCritical(appSql) << "addTask:" << q.lastError().text();
         m_db.rollback();
-
         return -1;
     }
 
     qint64 taskId = q.lastInsertId().toLongLong();
-
     auto tagIds = upsertTagsByName(m_db, task.tags);
 
     if (!replaceTaskTags(m_db, taskId, tagIds)) {
@@ -239,16 +249,18 @@ qint64 SQLiteStorage::addTask(const Task &task) {
     }
 
     if (!m_db.commit()) {
-        qWarning() << "tx commit:" << m_db.lastError();
+        qCritical(appSql) << "tx commit:" << m_db.lastError().text();
         return -1;
     }
 
+    qInfo(appSql) << "Task inserted id=" << taskId;
     return taskId;
 }
 
 bool SQLiteStorage::updateTask(qint64 id, const Task &task) {
+    qInfo(appSql) << "Update task id=" << id;
     if (!m_db.transaction()) {
-        qWarning() << "tx begin:" << m_db.lastError();
+        qWarning(appSql) << "tx begin:" << m_db.lastError().text();
     }
 
     QSqlQuery q(m_db);
@@ -259,12 +271,13 @@ bool SQLiteStorage::updateTask(qint64 id, const Task &task) {
     q.addBindValue(id);
 
     if (!q.exec()) {
-        qWarning() << "updateTask:" << q.lastError();
+        qCritical(appSql) << "updateTask:" << q.lastError().text();
         m_db.rollback();
         return false;
     }
 
     if (q.numRowsAffected() == 0) {
+        qInfo(appSql) << "No rows updated for id=" << id;
         m_db.rollback();
         return false;
     }
@@ -276,58 +289,61 @@ bool SQLiteStorage::updateTask(qint64 id, const Task &task) {
     }
 
     if (!m_db.commit()) {
-        qWarning() << "tx commit:" << m_db.lastError();
+        qCritical(appSql) << "tx commit:" << m_db.lastError().text();
         return false;
     }
 
+    qInfo(appSql) << "Task updated id=" << id;
     return true;
 }
 
 bool SQLiteStorage::deleteTask(qint64 id) {
+    qInfo(appSql) << "Delete task id=" << id;
     QSqlQuery q(m_db);
     q.prepare("DELETE FROM tasks WHERE id = ?");
     q.addBindValue(id);
 
     if (!q.exec()) {
-        qWarning() << "deleteTask:" << q.lastError();
+        qWarning(appSql) << "deleteTask:" << q.lastError().text();
         return false;
     }
 
-    return q.numRowsAffected() > 0;
+    bool ok = q.numRowsAffected() > 0;
+    qInfo(appSql) << (ok ? "Deleted" : "Not found") << "id=" << id;
+    return ok;
 }
 
 bool SQLiteStorage::deleteAll() {
-
+    qInfo(appSql) << "Delete ALL tasks/tags";
     if (!m_db.transaction()) {
-        qWarning() << "tx begin:" << m_db.lastError();
+        qWarning(appSql) << "tx begin:" << m_db.lastError().text();
     }
 
     QSqlQuery q(m_db);
 
     if (!q.exec("DELETE FROM task_tags")) {
-        qWarning() << "clear task_tags:" << q.lastError();
+        qWarning(appSql) << "clear task_tags:" << q.lastError().text();
         m_db.rollback();
-
         return false;
     }
 
     if (!q.exec("DELETE FROM tasks")) {
-        qWarning() << "clear tasks:" << q.lastError();
+        qWarning(appSql) << "clear tasks:" << q.lastError().text();
         m_db.rollback();
-
         return false;
     }
 
     if (!q.exec("DELETE FROM tags")) {
-        qWarning() << "clear tags:" << q.lastError();
+        qWarning(appSql) << "clear tags:" << q.lastError().text();
         m_db.rollback();
         return false;
     }
 
     if (!m_db.commit()) {
-        qWarning() << "tx commit:" << m_db.lastError();
+        qCritical(appSql) << "tx commit:" << m_db.lastError().text();
         return false;
     }
 
+    qInfo(appSql) << "All cleared";
     return true;
 }
