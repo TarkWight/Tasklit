@@ -26,3 +26,11 @@ bool TaskServiceImpl::deleteTask(qint64 id) {
 bool TaskServiceImpl::deleteAll() {
     return m_storage->deleteAll();
 }
+
+std::vector<Tag> TaskServiceImpl::getAllTags() const {
+    return m_storage->getAllTags();
+}
+
+qint64 TaskServiceImpl::addTag(const Tag &tag) {
+    return m_storage->addTag(tag);
+}

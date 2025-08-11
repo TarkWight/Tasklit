@@ -16,6 +16,9 @@ public:
     bool deleteTask(qint64 id) override;
     bool deleteAll() override;
 
+    std::vector<Tag> getAllTags() const override;
+    qint64 addTag(const Tag &tag) override;
+
 private:
     std::shared_ptr<IStorage> m_storage;
 };
