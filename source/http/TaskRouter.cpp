@@ -142,6 +142,49 @@ void TaskRouter::registerRoutes(QHttpServer &server) {
         }
     );
 
+    // GET /tags
+    server.route("/tags", QHttpServerRequest::Method::Get,
+        [this](const QHttpServerRequest &req) {
+            qInfo(appHttp) << "GET /tags";
+            QJsonArray arr;
+
+            for (const auto &tag : m_service->getAllTags()) {
+                arr.append(tag.toJson());
+            }
+
+            return makeJsonArray(arr);
+        }
+    );
+
+    // POST /tags
+    server.route("/tags", QHttpServerRequest::Method::Post,
+        [this](const QHttpServerRequest &req) {
+            qInfo(appHttp) << "POST /tags bodyBytes=" << req.body().size();
+
+            QString perr;
+            auto objOpt = parseBodyObject(req, &perr);
+
+            if (!objOpt) {
+                qWarning(appHttp) << "Invalid JSON:" << perr;
+
+                return makeError("Invalid JSON: " + perr, QHttpServerResponse::StatusCode::BadRequest);
+            }
+
+            Tag tag = Tag::fromJson(*objOpt);
+            auto id = m_service->addTag(tag);
+            if (id < 0) {
+                qCritical(appSql) << "Insert tag failed";
+
+                return makeError("Insert tag failed", QHttpServerResponse::StatusCode::InternalServerError);
+            }
+
+            tag.id = id;
+            qInfo(appHttp) << "Created tag id=" << id;
+
+            return makeJson(tag.toJson(), QHttpServerResponse::StatusCode::Created);
+        }
+    );
+
     // Error and empty request handler
     server.setMissingHandler(&server,
         [](const QHttpServerRequest &req, QHttpServerResponder &res) {
