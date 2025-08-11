@@ -33,16 +33,15 @@ void TaskRouter::registerRoutes(QHttpServer &server) {
                      return resp;
                  });
 
-    // GET /tasks/<int>
-    server.route("/tasks/<int>", [this](int id) {
-        qInfo(appHttp) << "GET /tasks/" << id;
-        auto t = m_service->getTaskById(id);
-        if (!t) {
-            qWarning(appHttp) << "Not found id=" << id;
-            return makeError("Not found", QHttpServerResponse::StatusCode::NotFound);
-        }
-        return makeJson(t->toJson());
-    });
+    // GET /tasks/<id>
+    server.route("/tasks/<arg>", QHttpServerRequest::Method::Get,
+                 [this](qint64 id) {
+                     qInfo(appHttp) << "GET /tasks/" << id;
+                     auto t = m_service->getTaskById(id);
+                     if (!t)
+                         return makeError("Not found", QHttpServerResponse::StatusCode::NotFound);
+                     return makeJson(t->toJson());
+                 });
 
     // POST /tasks
     server.route("/tasks", QHttpServerRequest::Method::Post,
@@ -67,37 +66,29 @@ void TaskRouter::registerRoutes(QHttpServer &server) {
                      return makeJson(t.toJson(), QHttpServerResponse::StatusCode::Created);
                  });
 
-    // PUT /tasks/<int>
-    server.route("/tasks/<int>", QHttpServerRequest::Method::Put,
-                 [this](int id, const QHttpServerRequest &req) {
+    // PUT /tasks/<id>
+    server.route("/tasks/<arg>", QHttpServerRequest::Method::Put,
+                 [this](qint64 id, const QHttpServerRequest &req) {
                      qInfo(appHttp) << "PUT /tasks/" << id << "bodyBytes=" << req.body().size();
-
                      QString perr;
                      auto objOpt = parseBodyObject(req, &perr);
-                     if (!objOpt) {
-                         qWarning(appHttp) << "Invalid JSON:" << perr;
+                     if (!objOpt)
                          return makeError("Invalid JSON: " + perr, QHttpServerResponse::StatusCode::BadRequest);
-                     }
 
                      Task t = Task::fromJson(*objOpt, id);
-                     if (!m_service->updateTask(id, t)) {
-                         qWarning(appHttp) << "Update failed/not found id=" << id;
+                     if (!m_service->updateTask(id, t))
                          return makeError("Update failed or not found", QHttpServerResponse::StatusCode::NotFound);
-                     }
 
                      auto updated = m_service->getTaskById(id);
-                     qInfo(appHttp) << "Updated id=" << id;
                      return makeJson(updated ? updated->toJson() : t.toJson());
                  });
 
-    // DELETE /tasks/<int>
-    server.route("/tasks/<int>", QHttpServerRequest::Method::Delete,
-                 [this](int id) {
+    // DELETE /tasks/<id>
+    server.route("/tasks/<arg>", QHttpServerRequest::Method::Delete,
+                 [this](qint64 id) {
                      qInfo(appHttp) << "DELETE /tasks/" << id;
-                     if (!m_service->deleteTask(id)) {
-                         qWarning(appHttp) << "Not found id=" << id;
+                     if (!m_service->deleteTask(id))
                          return makeError("Not found", QHttpServerResponse::StatusCode::NotFound);
-                     }
                      return makeJson(QJsonObject{{"ok", true}});
                  });
 
@@ -111,4 +102,20 @@ void TaskRouter::registerRoutes(QHttpServer &server) {
                      }
                      return makeJson(QJsonObject{{"ok", true}});
                  });
+
+    // Error and empty request handler
+    server.setMissingHandler(&server,
+                             [](const QHttpServerRequest &req, QHttpServerResponder &res) {
+                                 qWarning(appHttp) << "404 no route for"
+                                                   << toString(req.method()) << req.url().toString();
+
+                                 QJsonObject obj{
+                                     { "error",  "Not found" },
+                                     { "path",   req.url().toString() },
+                                     { "method", toString(req.method()) }
+                                 };
+
+                                 QHttpServerResponse r(obj, QHttpServerResponse::StatusCode::NotFound);
+                                 res.sendResponse(r);
+                             });
 }
