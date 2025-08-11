@@ -7,6 +7,7 @@
 #include "TaskRouter.hpp"
 #include "json_utils.hpp"
 #include "Logger.hpp"
+#include "TaskPatch.hpp"
 
 TaskRouter::TaskRouter(std::shared_ptr<ITaskService> service)
     : m_service(std::move(service)) {}
@@ -100,6 +101,40 @@ void TaskRouter::registerRoutes(QHttpServer &server) {
             auto updated = m_service->getTaskById(id);
 
             return makeJson(updated ? updated->toJson() : t.toJson());
+        }
+    );
+
+    // PATCH /task/<id>
+    server.route("/task/<arg>", QHttpServerRequest::Method::Patch,
+        [this](qint64 id, const QHttpServerRequest& req) {
+            qInfo(appHttp) << "PATCH /task/" << id << "bodyBytes=" << req.body().size();
+
+            auto current = m_service->getTaskById(id);
+            if (!current) {
+                qWarning(appHttp) << "Not found id=" << id;
+
+                return makeError("Not found", QHttpServerResponse::StatusCode::NotFound);
+            }
+
+            QString perr;
+            auto objOpt = parseBodyObject(req, &perr);
+            if (!objOpt) {
+                qWarning(appHttp) << "Invalid JSON:" << perr;
+
+                return makeError("Invalid JSON: " + perr, QHttpServerResponse::StatusCode::BadRequest);
+            }
+
+            Task patched = *current;
+            applyTaskPatch(patched, *objOpt);
+            if (!m_service->updateTask(id, patched)) {
+                qWarning(appHttp) << "Update failed id=" << id;
+
+                return makeError("Update failed", QHttpServerResponse::StatusCode::InternalServerError);
+            }
+
+            auto updated = m_service->getTaskById(id);
+
+            return makeJson(updated ? updated->toJson() : patched.toJson());
         }
     );
 
