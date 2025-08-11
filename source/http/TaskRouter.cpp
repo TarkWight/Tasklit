@@ -82,28 +82,6 @@ void TaskRouter::registerRoutes(QHttpServer &server) {
         }
     );
 
-    // PUT /tasks/<id>
-    server.route("/tasks/<arg>", QHttpServerRequest::Method::Put,
-        [this](qint64 id, const QHttpServerRequest &req) {
-            qInfo(appHttp) << "PUT /tasks/" << id << "bodyBytes=" << req.body().size();
-            QString perr;
-            auto objOpt = parseBodyObject(req, &perr);
-            if (!objOpt) {
-                return makeError("Invalid JSON: " + perr, QHttpServerResponse::StatusCode::BadRequest);
-            }
-
-            Task t = Task::fromJson(*objOpt, id);
-
-            if (!m_service->updateTask(id, t)) {
-                return makeError("Update failed or not found", QHttpServerResponse::StatusCode::NotFound);
-            }
-
-            auto updated = m_service->getTaskById(id);
-
-            return makeJson(updated ? updated->toJson() : t.toJson());
-        }
-    );
-
     // PATCH /task/<id>
     server.route("/task/<arg>", QHttpServerRequest::Method::Patch,
         [this](qint64 id, const QHttpServerRequest& req) {
