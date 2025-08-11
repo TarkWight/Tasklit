@@ -5,6 +5,7 @@
 #include <QHostAddress>
 #include <QDebug>
 
+#include "Logger.hpp"
 #include "SQLiteStorage.hpp"
 #include "TaskServiceImpl.hpp"
 #include "TaskRouter.hpp"
@@ -12,6 +13,13 @@
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
+
+    initLogging("tasklit.log");
+
+    QLoggingCategory::setFilterRules(
+        "tasklit.*=true\n"
+        "qt.network.ssl.warning=false\n"
+        );
 
     // ──────────────────────────────
     // 1. Настраиваем хранилище
