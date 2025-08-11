@@ -1,0 +1,13 @@
+find_package(Qt6 REQUIRED COMPONENTS Core Gui)
+
+add_library(model
+  task.hpp
+  tag.hpp
+)
+
+target_link_libraries(model PUBLIC
+  Qt6::Core
+  Qt6::Gui
+)
+
+target_include_directories(model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

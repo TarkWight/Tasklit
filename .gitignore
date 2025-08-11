@@ -1,0 +1,16 @@
+# MacOS meta files
+.DS_Store
+
+# qtcreator generated files
+*.pro.user*
+*.qbs.user*
+CMakeLists.txt.user*
+
+
+# Directories with generated files
+.moc/
+.obj/
+.pch/
+.rcc/
+.uic/
+*/build*/
