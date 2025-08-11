@@ -1,0 +1,208 @@
+{
+	"info": {
+		"_postman_id": "49fe8494-9673-4e92-9841-d178ca590937",
+		"name": "Qt Tasks API",
+		"description": "Коллекция для тестирования Qt Task API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "32137254"
+	},
+	"item": [
+		{
+			"name": "Ping",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseURL}}/ping",
+					"host": [
+						"{{baseURL}}"
+					],
+					"path": [
+						"ping"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get all tasks",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseURL}}/taskse",
+					"host": [
+						"{{baseURL}}"
+					],
+					"path": [
+						"taskse"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Create task",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"title\": \"Помыть попу\",\n    \"description\": \"Check server\"\n}"
+				},
+				"url": {
+					"raw": "{{baseURL}}/tasks",
+					"host": [
+						"{{baseURL}}"
+					],
+					"path": [
+						"tasks"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get task by ID",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseURL}}/tasks/3",
+					"host": [
+						"{{baseURL}}"
+					],
+					"path": [
+						"tasks",
+						"3"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Update party of task",
+			"request": {
+				"method": "PATCH",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"title\":\"Updated title\",\n    \"description\":\"Updated description\",\n    \"completed\":true,\n    \"tags\":\n    [\n        {\"name\":\"qt\"}\n    ]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{baseURL}}/task/5",
+					"host": [
+						"{{baseURL}}"
+					],
+					"path": [
+						"task",
+						"5"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete task",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "{{baseURL}}/tasks/4",
+					"host": [
+						"{{baseURL}}"
+					],
+					"path": [
+						"tasks",
+						"4"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete all tasks",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "{{baseURL}}/tasks",
+					"host": [
+						"{{baseURL}}"
+					],
+					"path": [
+						"tasks"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get all tags",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"title\":\"Updated title\",\n    \"description\":\"Updated description\",\n    \"completed\":true,\n    \"tags\":\n    [\n        {\"name\":\"qt\"}\n    ]\n}"
+				},
+				"url": {
+					"raw": "{{baseURL}}/tags",
+					"host": [
+						"{{baseURL}}"
+					],
+					"path": [
+						"tags"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Create new tag",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\":\"qt@\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{baseURL}}/tags",
+					"host": [
+						"{{baseURL}}"
+					],
+					"path": [
+						"tags"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "baseURL",
+			"value": "http://localhost:8080",
+			"type": "default"
+		}
+	]
+}
