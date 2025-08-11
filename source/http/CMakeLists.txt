@@ -10,6 +10,7 @@ target_link_libraries(http
         Qt6::HttpServer
         model
         service
+        utils
 )
 
 target_include_directories(http

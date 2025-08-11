@@ -6,6 +6,7 @@ add_subdirectory(model)
 add_subdirectory(storage)
 add_subdirectory(service)
 add_subdirectory(http)
+add_subdirectory(utils)
 
 target_link_libraries(Tasklit
   Qt6::Core
@@ -17,6 +18,7 @@ target_link_libraries(Tasklit
   storage
   service
   http
+  utils
 )
 
 target_include_directories(Tasklit PRIVATE
