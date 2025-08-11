@@ -15,6 +15,9 @@ public:
     bool deleteTask(qint64 id) override;
     bool deleteAll() override;
 
+    std::vector<Tag> getAllTags() const override;
+    qint64 addTag(const Tag& tag) override;
+
 private:
     QSqlDatabase m_db;
 };

@@ -17,6 +17,9 @@ public:
     virtual bool updateTask(qint64 id, const Task& task) = 0;
     virtual bool deleteTask(qint64 id) = 0;
     virtual bool deleteAll() = 0;
+
+    virtual std::vector<Tag> getAllTags() const = 0;
+    virtual qint64 addTag(const Tag& tag) = 0;
 };
 
 #endif // TASKLIT_STORAGE_ISTORAGE_HPP

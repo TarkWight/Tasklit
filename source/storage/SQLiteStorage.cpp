@@ -347,3 +347,53 @@ bool SQLiteStorage::deleteAll() {
     qInfo(appSql) << "All cleared";
     return true;
 }
+
+std::vector<Tag> SQLiteStorage::getAllTags() const {
+    std::vector<Tag> out;
+    QSqlQuery q(m_db);
+
+    if (!q.exec("SELECT id, name FROM tags ORDER BY name ASC")) {
+        qWarning(appSql) << "getAllTags:" << q.lastError().text();
+
+        return out;
+    }
+
+    while (q.next()) {
+        Tag t;
+        t.id = q.value(0).toLongLong();
+        t.name = q.value(1).toString();
+        out.push_back(std::move(t));
+    }
+
+    qInfo(appSql) << "→" << out.size() << "tags fetched";
+
+    return out;
+}
+
+qint64 SQLiteStorage::addTag(const Tag &tag) {
+    qInfo(appSql) << "Insert tag name=" << tag.name;
+
+    QSqlQuery ins(m_db), sel(m_db);
+    ins.prepare("INSERT INTO tags(name) VALUES(?)");
+    ins.addBindValue(tag.name);
+
+    if (!ins.exec()) {
+        qWarning(appSql) << "addTag insert failed:" << ins.lastError().text()
+                         << "trying SELECT existing";
+        sel.prepare("SELECT id FROM tags WHERE name = ?");
+        sel.addBindValue(tag.name);
+
+        if (sel.exec() && sel.next()) {
+            auto existingId = sel.value(0).toLongLong();
+            qInfo(appSql) << "Tag exists id=" << existingId;
+            return existingId;
+        }
+
+        return -1;
+    }
+
+    auto newId = ins.lastInsertId().toLongLong();
+    qInfo(appSql) << "Tag inserted id=" << newId;
+
+    return newId;
+}
