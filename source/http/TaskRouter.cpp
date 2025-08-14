@@ -27,7 +27,7 @@ void TaskRouter::registerRoutes(QHttpServer &server) {
             qInfo(appHttp) << toString(req.method()) << req.url().toString()
             << "query:" << req.query().toString();
 
-        QJsonArray arr;
+            QJsonArray arr;
             for (const auto &t : m_service->getAllTasks()) {
                 arr.append(t.toJson());
             }
@@ -116,15 +116,29 @@ void TaskRouter::registerRoutes(QHttpServer &server) {
         }
     );
 
-    // DELETE /tasks/<id>
-    server.route("/tasks/<arg>", QHttpServerRequest::Method::Delete,
-        [this](qint64 id) {
-            qInfo(appHttp) << "DELETE /tasks/" << id;
-                if (!m_service->deleteTask(id)) {
-                    return makeError("Not found", QHttpServerResponse::StatusCode::NotFound);
+    // DELETE /task?id=<id>
+    server.route("/task", QHttpServerRequest::Method::Delete,
+        [this](const QHttpServerRequest& req) {
+            const auto q = req.query();
+            const auto idStr = q.queryItemValue("id");
+
+            if (!idStr.isEmpty()) {
+                bool ok = false;
+                const qint64 id = idStr.toLongLong(&ok);
+                if (!ok) {
+                    return makeError("Invalid id", QHttpServerResponse::StatusCode::BadRequest);
                 }
 
-            return makeJson(QJsonObject{ { "ok", true } });
+                qInfo(appHttp) << "DELETE /task id=" << id;
+
+                if (!m_service->deleteTask(id)) {
+                    return makeError("Task with id<" + idStr + "> not found!", QHttpServerResponse::StatusCode::NotFound);
+                }
+
+                return makeJson(QJsonObject{{"Ok", true}});
+            }
+
+            return makeJson(QJsonObject{{"Ok", true}});
         }
     );
 
