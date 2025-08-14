@@ -39,17 +39,38 @@ void TaskRouter::registerRoutes(QHttpServer &server) {
         }
     );
 
-    // GET /tasks/<id>
-    server.route("/tasks/<arg>", QHttpServerRequest::Method::Get,
-        [this](qint64 id) {
-            qInfo(appHttp) << "GET /tasks/" << id;
-            auto t = m_service->getTaskById(id);
+    // GET /task?id=<id>
+    server.route("/task", QHttpServerRequest::Method::Get,
+        [this](const QHttpServerRequest& req) {
+            const auto query = req.query();
+            bool ok = false;
+            const auto idStr = query.queryItemValue("id");
+            const auto hasId = !idStr.isEmpty();
+            const qint64 id = idStr.toLongLong(&ok);
 
-            if (!t) {
-                return makeError("Not found", QHttpServerResponse::StatusCode::NotFound);
+            qInfo(appHttp) << "GET /task" << (hasId ? QString("id=%1").arg(idStr) : QString())
+                           << "query:" << query.toString();
+
+            if (hasId) {
+                if (!ok) {
+                    return makeError("Invalid task id", QHttpServerResponse::StatusCode::BadRequest);
+                }
+
+                auto task = m_service->getTaskById(id);
+
+                if (!task) {
+                    return makeError("Task with id<" + idStr + "> Not found", QHttpServerResponse::StatusCode::NotFound);
+                }
+
+                return makeJson(task->toJson());
             }
 
-            return makeJson(t->toJson());
+            QJsonArray arr;
+            for (const auto &task : m_service->getAllTasks()) {
+                arr.append(task.toJson());
+            }
+            qInfo(appHttp) << "-> 200 items:" << arr.size();
+            return makeJsonArray(arr);
         }
     );
 
