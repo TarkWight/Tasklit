@@ -96,36 +96,43 @@ void TaskRouter::registerRoutes(QHttpServer &server) {
         }
     );
 
-    // PATCH /task/<id>
-    server.route("/task/<arg>", QHttpServerRequest::Method::Patch,
-        [this](qint64 id, const QHttpServerRequest& req) {
-            qInfo(appHttp) << "PATCH /task/" << id << "bodyBytes=" << req.body().size();
+    // PATCH /task?id=<id>
+    server.route("/task", QHttpServerRequest::Method::Patch,
+        [this](const QHttpServerRequest& req) {
+            const auto q = req.query();
+            bool ok = false;
+            const auto idStr = q.queryItemValue("id");
+            if (idStr.isEmpty()) {
+                return makeError("Missing 'id' query param", QHttpServerResponse::StatusCode::BadRequest);
+            }
+
+            const qint64 id = idStr.toLongLong(&ok);
+
+            if (!ok) {
+                return makeError("Invalid id", QHttpServerResponse::StatusCode::BadRequest);
+            }
+
+            qInfo(appHttp) << "PATCH /task id=" << id << "bodyBytes=" << req.body().size();
 
             auto current = m_service->getTaskById(id);
             if (!current) {
-                qWarning(appHttp) << "Not found id=" << id;
-
                 return makeError("Not found", QHttpServerResponse::StatusCode::NotFound);
             }
 
             QString perr;
             auto objOpt = parseBodyObject(req, &perr);
             if (!objOpt) {
-                qWarning(appHttp) << "Invalid JSON:" << perr;
-
                 return makeError("Invalid JSON: " + perr, QHttpServerResponse::StatusCode::BadRequest);
             }
 
             Task patched = *current;
             applyTaskPatch(patched, *objOpt);
-            if (!m_service->updateTask(id, patched)) {
-                qWarning(appHttp) << "Update failed id=" << id;
 
+            if (!m_service->updateTask(id, patched)) {
                 return makeError("Update failed", QHttpServerResponse::StatusCode::InternalServerError);
             }
 
             auto updated = m_service->getTaskById(id);
-
             return makeJson(updated ? updated->toJson() : patched.toJson());
         }
     );
