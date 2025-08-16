@@ -5,6 +5,7 @@ add_library(utils
   Logger.hpp
   Logger.cpp
   TaskPatch.hpp
+  ErrorHandler.hpp
 )
 
 target_link_libraries(utils PUBLIC
