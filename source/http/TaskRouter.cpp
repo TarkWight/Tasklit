@@ -13,15 +13,8 @@ TaskRouter::TaskRouter(std::shared_ptr<ITaskService> service)
     : m_service(std::move(service)) {}
 
 void TaskRouter::registerRoutes(QHttpServer &server) {
-    // ping
-    server.route("/ping", [] {
-        qInfo(appHttp) << "PING";
 
-        return QHttpServerResponse("text/plain", "pong");
-        }
-    );
-
-    // GET /tasks — список
+    // GET /tasks
     server.route("/tasks", QHttpServerRequest::Method::Get,
         [this](const QHttpServerRequest& req) {
             qInfo(appHttp) << toString(req.method()) << req.url().toString()
@@ -33,7 +26,7 @@ void TaskRouter::registerRoutes(QHttpServer &server) {
             }
 
             auto resp = makeJsonArray(arr);
-            qInfo(appHttp) << "→ 200 items:" << arr.size();
+            qInfo(appHttp) << "Status code: 200\nItems:" << arr.size();
 
             return resp;
         }
@@ -69,15 +62,15 @@ void TaskRouter::registerRoutes(QHttpServer &server) {
             for (const auto &task : m_service->getAllTasks()) {
                 arr.append(task.toJson());
             }
-            qInfo(appHttp) << "-> 200 items:" << arr.size();
+            qInfo(appHttp) << "Status code: 200\nItems:" << arr.size();
             return makeJsonArray(arr);
         }
     );
 
-    // POST /tasks
-    server.route("/tasks", QHttpServerRequest::Method::Post,
+    // POST /task/create
+    server.route("/task/create", QHttpServerRequest::Method::Post,
         [this](const QHttpServerRequest &req) {
-            qInfo(appHttp) << "POST /tasks bodyBytes=" << req.body().size();
+            qInfo(appHttp) << "POST /task/create bodyBytes=" << req.body().size();
 
             QString perr;
             auto objOpt = parseBodyObject(req, &perr);
@@ -91,13 +84,13 @@ void TaskRouter::registerRoutes(QHttpServer &server) {
             auto id = m_service->addTask(t);
 
             if (id < 0) {
-                qCritical(appSql) << "Insert failed";
+                qCritical(appSql) << "[Router] Insert failed";
 
                 return makeError("Insert failed", QHttpServerResponse::StatusCode::InternalServerError);
             }
 
             t.id = id;
-            qInfo(appHttp) << "Created task id=" << id;
+            qInfo(appHttp) << "Created task id<" << id << ">";
 
             return makeJson(t.toJson(), QHttpServerResponse::StatusCode::Created);
         }
