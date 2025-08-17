@@ -8,34 +8,17 @@
 	},
 	"item": [
 		{
-			"name": "Ping",
-			"request": {
-				"method": "GET",
-				"header": [],
-				"url": {
-					"raw": "{{baseURL}}/ping",
-					"host": [
-						"{{baseURL}}"
-					],
-					"path": [
-						"ping"
-					]
-				}
-			},
-			"response": []
-		},
-		{
 			"name": "Get all tasks",
 			"request": {
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "{{baseURL}}/taskse",
+					"raw": "{{baseURL}}/tasks",
 					"host": [
 						"{{baseURL}}"
 					],
 					"path": [
-						"taskse"
+						"tasks"
 					]
 				}
 			},
@@ -53,15 +36,16 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"title\": \"Помыть попу\",\n    \"description\": \"Check server\"\n}"
+					"raw": "{\n    \"title\": \"First task\",\n    \"description\": \"Check server\",\n    \"tags\": [],\n    \"isCompleted\": true\n}"
 				},
 				"url": {
-					"raw": "{{baseURL}}/tasks",
+					"raw": "{{baseURL}}/task/create",
 					"host": [
 						"{{baseURL}}"
 					],
 					"path": [
-						"tasks"
+						"task",
+						"create"
 					]
 				}
 			},
@@ -73,13 +57,18 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "{{baseURL}}/tasks/3",
+					"raw": "{{baseURL}}/task?id=",
 					"host": [
 						"{{baseURL}}"
 					],
 					"path": [
-						"tasks",
-						"3"
+						"task"
+					],
+					"query": [
+						{
+							"key": "id",
+							"value": ""
+						}
 					]
 				}
 			},
@@ -92,7 +81,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"title\":\"Updated title\",\n    \"description\":\"Updated description\",\n    \"completed\":true,\n    \"tags\":\n    [\n        {\"name\":\"qt\"}\n    ]\n}",
+					"raw": "{\n    \"title\":\"Updated title\",\n    \"description\":\"Updated description\",\n    \"isCompleted\":true,\n    \"tags\":\n    [\n        \n    ]\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -100,13 +89,18 @@
 					}
 				},
 				"url": {
-					"raw": "{{baseURL}}/task/5",
+					"raw": "{{baseURL}}/task?id=",
 					"host": [
 						"{{baseURL}}"
 					],
 					"path": [
-						"task",
-						"5"
+						"task"
+					],
+					"query": [
+						{
+							"key": "id",
+							"value": ""
+						}
 					]
 				}
 			},
@@ -118,13 +112,18 @@
 				"method": "DELETE",
 				"header": [],
 				"url": {
-					"raw": "{{baseURL}}/tasks/4",
+					"raw": "{{baseURL}}/task?id=",
 					"host": [
 						"{{baseURL}}"
 					],
 					"path": [
-						"tasks",
-						"4"
+						"task"
+					],
+					"query": [
+						{
+							"key": "id",
+							"value": ""
+						}
 					]
 				}
 			},
@@ -149,16 +148,9 @@
 		},
 		{
 			"name": "Get all tags",
-			"protocolProfileBehavior": {
-				"disableBodyPruning": true
-			},
 			"request": {
 				"method": "GET",
 				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"title\":\"Updated title\",\n    \"description\":\"Updated description\",\n    \"completed\":true,\n    \"tags\":\n    [\n        {\"name\":\"qt\"}\n    ]\n}"
-				},
 				"url": {
 					"raw": "{{baseURL}}/tags",
 					"host": [
@@ -186,12 +178,13 @@
 					}
 				},
 				"url": {
-					"raw": "{{baseURL}}/tags",
+					"raw": "{{baseURL}}/tag/create",
 					"host": [
 						"{{baseURL}}"
 					],
 					"path": [
-						"tags"
+						"tag",
+						"create"
 					]
 				}
 			},
