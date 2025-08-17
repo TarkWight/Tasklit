@@ -6,7 +6,7 @@
 #include <QDebug>
 
 #include "Logger.hpp"
-#include "SQLiteStorage.hpp"
+#include "SQLiteStorageImpl.hpp"
 #include "TaskServiceImpl.hpp"
 #include "TaskRouter.hpp"
 

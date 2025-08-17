@@ -14,11 +14,7 @@ target_link_libraries(Tasklit
   Qt6::Sql
   Qt6::HttpServer
   Qt6::Concurrent
-  model
-  storage
-  service
   http
-  utils
 )
 
 target_include_directories(Tasklit PRIVATE

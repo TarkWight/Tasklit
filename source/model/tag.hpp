@@ -1,27 +1,27 @@
 #ifndef TAG_HPP
 #define TAG_HPP
 
-#include <QString>
 #include <QJsonObject>
-
-#include <cstdint>
+#include <QString>
+#include <QUuid>
 
 struct Tag {
-    int64_t id;
+    QUuid id;
     QString name;
 
     QJsonObject toJson() const {
-        return {
-            { "id", id },
-            { "name", name }
-        };
+        return QJsonObject{{"id", id.toString(QUuid::WithoutBraces)},
+                           {"name", name}};
     }
 
-    static Tag fromJson(const QJsonObject &obj, int64_t id = -1) {
-        return {
-            .id = id,
-            .name = obj["name"].toString()
-        };
+    static Tag fromJson(const QJsonObject &jsonObject, const QUuid &forcedId = QUuid()) {
+        Tag tag;
+        tag.id = forcedId.isNull()
+                     ? QUuid::fromString(jsonObject.value("id").toString())
+                     : forcedId;
+        tag.name = jsonObject.value("name").toString();
+
+        return tag;
     }
 };
 

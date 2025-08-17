@@ -1,50 +1,80 @@
 #ifndef TASK_HPP
 #define TASK_HPP
 
-#include <QString>
-#include <QJsonObject>
 #include <QJsonArray>
+#include <QJsonObject>
+#include <QString>
+#include <QUuid>
+#include <QVector>
+#include <optional>
 
-#include <cstdint>
-
-#include "tag.hpp"
+#include "Tag.hpp"
 
 struct Task {
-    int64_t id;
+    QUuid id;
     QString title;
     QString description;
-    bool completed = false;
-    QList<Tag> tags;
+    bool isCompleted = false;
 
-    QJsonObject toJson() const {
-        QJsonArray tagsArray;
-        for (const auto &tag : tags) {
-            tagsArray.append(tag.toJson());
+    QVector<QUuid> tags;
+
+    std::optional<QVector<Tag>> tagsExpanded;
+
+    QJsonObject toJson(bool includeExpanded = false) const {
+        QJsonArray tagIdsArray;
+        for (const QUuid &tagId : tags) {
+            tagIdsArray.append(tagId.toString(QUuid::WithoutBraces));
         }
 
-        return {
-            { "id", id },
-            { "title", title },
-            { "description", description },
-            { "completed", completed },
-            { "tags", tagsArray }
-        };
+        QJsonObject json{{"id", id.toString(QUuid::WithoutBraces)},
+                         {"title", title},
+                         {"description", description},
+                         {"isCompleted", isCompleted},
+                         {"tags", tagIdsArray}};
+
+        if (includeExpanded && tagsExpanded && !tagsExpanded->isEmpty()) {
+            QJsonArray expanded;
+            for (const Tag &tag : *tagsExpanded) {
+                expanded.append(tag.toJson());
+            }
+            json.insert("tagsExpanded", expanded);
+        }
+
+        return json;
     }
 
-    static Task fromJson(const QJsonObject &obj, int64_t id = -1) {
+    static Task fromJson(const QJsonObject &jsonObject, const QUuid &forcedId = QUuid()) {
         Task task;
-        task.id = id;
-        task.title = obj["title"].toString();
-        task.description = obj["description"].toString();
-        task.completed = obj["completed"].toBool();
 
-        QJsonArray tagArray = obj["tags"].toArray();
-        for (int i = 0; i < tagArray.size(); ++i) {
-            const auto &t = tagArray.at(i);
-            if (t.isObject()) {
-                task.tags.append(Tag::fromJson(t.toObject()));
+        task.id = forcedId.isNull()
+                      ? QUuid::fromString(jsonObject.value("id").toString())
+                      : forcedId;
+
+        task.title = jsonObject.value("title").toString();
+        task.description = jsonObject.value("description").toString();
+        task.isCompleted = jsonObject.value("isCompleted").toBool(false);
+
+        if (jsonObject.contains("tags") && jsonObject.value("tags").isArray()) {
+            const QJsonArray tagsArray = jsonObject.value("tags").toArray();
+            task.tags.clear();
+            task.tags.reserve(static_cast<int>(tagsArray.size()));
+
+            for (const QJsonValue &value : tagsArray) {
+                QUuid parsedId;
+                if (value.isString()) {
+                    parsedId = QUuid::fromString(value.toString());
+                } else if (value.isObject()) {
+                    parsedId =
+                        QUuid::fromString(value.toObject().value("id").toString());
+                }
+
+                if (!parsedId.isNull()) {
+                    task.tags.push_back(parsedId);
+                }
             }
         }
+
+        task.tagsExpanded.reset();
 
         return task;
     }

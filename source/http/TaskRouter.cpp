@@ -1,204 +1,435 @@
-#include <QtHttpServer/QHttpServerResponse>
-#include <QtHttpServer/QHttpServerRequest>
+#include <QDateTime>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QJsonArray>
+#include <QUrlQuery>
+#include <QtHttpServer/QHttpServerRequest>
+#include <QtHttpServer/QHttpServerResponse>
 
-#include "TaskRouter.hpp"
-#include "json_utils.hpp"
+#include "ErrorHandler.hpp"
+#include "JsonUtils.hpp"
 #include "Logger.hpp"
+#include "Tag.hpp"
+#include "Task.hpp"
 #include "TaskPatch.hpp"
+#include "TaskRouter.hpp"
 
 TaskRouter::TaskRouter(std::shared_ptr<ITaskService> service)
     : m_service(std::move(service)) {}
 
+static QUuid parseUuidLoose(const QString &string) {
+    QUuid id = QUuid::fromString(string);
+    if (!id.isNull()) {
+        return id;
+    }
+    if (!string.isEmpty() && !string.startsWith('{') && !string.endsWith('}')) {
+        id = QUuid::fromString(QStringLiteral("{") + string +
+                               QStringLiteral("}"));
+    }
+    return id;
+}
+
 void TaskRouter::registerRoutes(QHttpServer &server) {
-    // ping
-    server.route("/ping", [] {
-        qInfo(appHttp) << "PING";
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────────────────────────────────────
+    const auto parseUuidFromQuery = [](const QHttpServerRequest &request,
+                                       QUuid &outId,
+                                       QString &outError) -> bool {
+        const QUrlQuery query = request.query();
 
-        return QHttpServerResponse("text/plain", "pong");
+        const QString idString = query.queryItemValue(QStringLiteral("id"));
+        if (idString.isEmpty()) {
+            outError = QStringLiteral("Missing 'id' query param");
+            return false;
         }
-    );
 
-    // GET /tasks — список
-    server.route("/tasks", QHttpServerRequest::Method::Get,
-        [this](const QHttpServerRequest& req) {
-            qInfo(appHttp) << toString(req.method()) << req.url().toString()
-            << "query:" << req.query().toString();
-
-        QJsonArray arr;
-            for (const auto &t : m_service->getAllTasks()) {
-                arr.append(t.toJson());
-            }
-
-            auto resp = makeJsonArray(arr);
-            qInfo(appHttp) << "→ 200 items:" << arr.size();
-
-            return resp;
+        const QUuid id = parseUuidLoose(idString);
+        if (id.isNull()) {
+            outError = QStringLiteral("Invalid 'id' (expected UUID)");
+            return false;
         }
-    );
 
-    // GET /tasks/<id>
-    server.route("/tasks/<arg>", QHttpServerRequest::Method::Get,
-        [this](qint64 id) {
-            qInfo(appHttp) << "GET /tasks/" << id;
-            auto t = m_service->getTaskById(id);
+        outId = id;
+        return true;
+    };
 
-            if (!t) {
-                return makeError("Not found", QHttpServerResponse::StatusCode::NotFound);
-            }
-
-            return makeJson(t->toJson());
+    const auto mirrorRoute = [&server](const char *path,
+                                       QHttpServerRequest::Method method,
+                                       auto handler) {
+        server.route(path, method, handler);
+        QString withSlash = QString::fromLatin1(path);
+        if (!withSlash.endsWith('/')) {
+            withSlash.append('/');
         }
-    );
 
-    // POST /tasks
-    server.route("/tasks", QHttpServerRequest::Method::Post,
-        [this](const QHttpServerRequest &req) {
-            qInfo(appHttp) << "POST /tasks bodyBytes=" << req.body().size();
+        server.route(withSlash.toLatin1().constData(), method, handler);
+    };
 
-            QString perr;
-            auto objOpt = parseBodyObject(req, &perr);
+    // ─────────────────────────────────────────────────────────────────────────────
+    // GET /tasks
+    // ─────────────────────────────────────────────────────────────────────────────
+    mirrorRoute(
+        "/tasks", QHttpServerRequest::Method::Get,
+        wrapSafe("GET /tasks",
+                 std::function<QHttpServerResponse(const QHttpServerRequest &,
+                                                   const QString &)>(
+                     [this](const QHttpServerRequest &request,
+                            const QString &requestId) {
+                         qInfo(appHttp)
+                         << "[GET] /tasks"
+                         << "url:" << request.url().toString()
+                         << "query:" << request.query().toString()
+                         << "| requestId=" << requestId;
 
-            if (!objOpt) {
-                qWarning(appHttp) << "Invalid JSON:" << perr;
-                return makeError("Invalid JSON: " + perr, QHttpServerResponse::StatusCode::BadRequest);
-            }
+                         QJsonArray items;
+                         const auto allTasks = m_service->getAllTasks();
+                         for (const Task &task : allTasks) {
+                             items.append(task.toJson());
+                         }
 
-            Task t = Task::fromJson(*objOpt);
-            auto id = m_service->addTask(t);
+                         return makeApiOk("Tasks fetched",
+                                          QJsonObject{{"items", items},
+                                                      {"count", items.size()}},
+                                          requestId);
+                     })));
 
-            if (id < 0) {
-                qCritical(appSql) << "Insert failed";
+    // ─────────────────────────────────────────────────────────────────────────────
+    // GET /task?id=<uuid>
+    // ─────────────────────────────────────────────────────────────────────────────
+    mirrorRoute(
+        "/task", QHttpServerRequest::Method::Get,
+        wrapSafe(
+            "GET /task",
+            std::function<QHttpServerResponse(const QHttpServerRequest &,
+                                              const QString &)>(
+                [this, &parseUuidFromQuery](const QHttpServerRequest &request,
+                                            const QString &requestId) {
+                    qInfo(appHttp) << "[GET] /task"
+                                   << "url:" << request.url().toString()
+                                   << "| requestId=" << requestId;
 
-                return makeError("Insert failed", QHttpServerResponse::StatusCode::InternalServerError);
-            }
+                    QUuid taskId;
+                    QString parseError;
+                    if (!parseUuidFromQuery(request, taskId, parseError)) {
+                        return makeApiError(
+                            QHttpServerResponse::StatusCode::BadRequest,
+                            parseError, "bad_request", {}, requestId);
+                    }
 
-            t.id = id;
-            qInfo(appHttp) << "Created task id=" << id;
+                    const auto taskOpt = m_service->getTaskById(taskId);
+                    if (!taskOpt) {
+                        return makeApiError(
+                            QHttpServerResponse::StatusCode::NotFound,
+                            QString("Task with id=%1 not found")
+                                .arg(taskId.toString(QUuid::WithoutBraces)),
+                            "not_found",
+                            QJsonObject{
+                                        {"id", taskId.toString(QUuid::WithoutBraces)}},
+                            requestId);
+                    }
 
-            return makeJson(t.toJson(), QHttpServerResponse::StatusCode::Created);
-        }
-    );
+                    return makeApiOk("Task fetched",
+                                     QJsonObject{{"task", taskOpt->toJson()}},
+                                     requestId);
+                })));
 
-    // PATCH /task/<id>
-    server.route("/task/<arg>", QHttpServerRequest::Method::Patch,
-        [this](qint64 id, const QHttpServerRequest& req) {
-            qInfo(appHttp) << "PATCH /task/" << id << "bodyBytes=" << req.body().size();
+    // ─────────────────────────────────────────────────────────────────────────────
+    // POST /task/create
+    // ─────────────────────────────────────────────────────────────────────────────
+    mirrorRoute(
+        "/task/create", QHttpServerRequest::Method::Post,
+        wrapSafe(
+            "POST /task/create",
+            std::function<QHttpServerResponse(
+                const QHttpServerRequest &,
+                const QString &)>([this](const QHttpServerRequest &request,
+                                         const QString &requestId) {
+                qInfo(appHttp) << "[POST] /task/create"
+                               << "bytes=" << request.body().size()
+                               << "| requestId=" << requestId;
 
-            auto current = m_service->getTaskById(id);
-            if (!current) {
-                qWarning(appHttp) << "Not found id=" << id;
-
-                return makeError("Not found", QHttpServerResponse::StatusCode::NotFound);
-            }
-
-            QString perr;
-            auto objOpt = parseBodyObject(req, &perr);
-            if (!objOpt) {
-                qWarning(appHttp) << "Invalid JSON:" << perr;
-
-                return makeError("Invalid JSON: " + perr, QHttpServerResponse::StatusCode::BadRequest);
-            }
-
-            Task patched = *current;
-            applyTaskPatch(patched, *objOpt);
-            if (!m_service->updateTask(id, patched)) {
-                qWarning(appHttp) << "Update failed id=" << id;
-
-                return makeError("Update failed", QHttpServerResponse::StatusCode::InternalServerError);
-            }
-
-            auto updated = m_service->getTaskById(id);
-
-            return makeJson(updated ? updated->toJson() : patched.toJson());
-        }
-    );
-
-    // DELETE /tasks/<id>
-    server.route("/tasks/<arg>", QHttpServerRequest::Method::Delete,
-        [this](qint64 id) {
-            qInfo(appHttp) << "DELETE /tasks/" << id;
-                if (!m_service->deleteTask(id)) {
-                    return makeError("Not found", QHttpServerResponse::StatusCode::NotFound);
+                QString parseError;
+                const auto bodyOpt = parseBodyObject(request, &parseError);
+                if (!bodyOpt) {
+                    return makeApiError(
+                        QHttpServerResponse::StatusCode::BadRequest,
+                        "Invalid JSON: " + parseError, "bad_request", {},
+                        requestId);
                 }
 
-            return makeJson(QJsonObject{ { "ok", true } });
-        }
-    );
+                QJsonObject payload = *bodyOpt;
 
+                const QString title = payload.value("title").toString();
+                if (title.trimmed().isEmpty()) {
+                    return makeApiError(
+                        QHttpServerResponse::StatusCode::BadRequest,
+                        "Field 'title' is required and must be non-empty",
+                        "validation_error", QJsonObject{{"field", "title"}},
+                        requestId);
+                }
+
+                if (!payload.contains("description")) {
+                    payload.insert("description", "");
+                }
+                if (!payload.contains("isCompleted")) {
+                    payload.insert("isCompleted", false);
+                }
+
+                QVector<QUuid> tagIds;
+                if (payload.contains("tags")) {
+                    const QJsonValue tagsVal = payload.value("tags");
+                    if (!tagsVal.isArray()) {
+                        return makeApiError(
+                            QHttpServerResponse::StatusCode::BadRequest,
+                            "Field 'tags' must be an array", "validation_error",
+                            QJsonObject{{"field", "tags"}}, requestId);
+                    }
+
+                    const QJsonArray in = tagsVal.toArray();
+                    tagIds.reserve(in.size());
+                    for (const QJsonValue &v : in) {
+                        QUuid parsed;
+                        if (v.isString()) {
+                            parsed = parseUuidLoose(v.toString());
+                        } else if (v.isObject()) {
+                            parsed = parseUuidLoose(
+                                v.toObject().value("id").toString());
+                        } else {
+                            return makeApiError(
+                                QHttpServerResponse::StatusCode::BadRequest,
+                                "Each tag must be a UUID string or an object "
+                                "with 'id' (UUID)",
+                                "validation_error",
+                                QJsonObject{{"field", "tags"}}, requestId);
+                        }
+
+                        if (parsed.isNull()) {
+                            return makeApiError(
+                                QHttpServerResponse::StatusCode::BadRequest,
+                                "Invalid tag id (expected UUID)",
+                                "validation_error",
+                                QJsonObject{{"field", "tags"}}, requestId);
+                        }
+                        tagIds.push_back(parsed);
+                    }
+                }
+
+                Task newTask = Task::fromJson(payload);
+                newTask.tags = std::move(tagIds);
+
+                const QUuid storedId = m_service->addTask(newTask);
+                if (storedId.isNull()) {
+                    return makeApiError(
+                        QHttpServerResponse::StatusCode::InternalServerError,
+                        "Insert failed", "internal_error", {}, requestId);
+                }
+                newTask.id = storedId;
+
+                return makeApiOk(
+                    "Task created", QJsonObject{{"task", newTask.toJson()}},
+                    requestId, QHttpServerResponse::StatusCode::Created);
+            })));
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // PATCH /task?id<uuid>
+    // ─────────────────────────────────────────────────────────────────────────────
+    mirrorRoute(
+        "/task", QHttpServerRequest::Method::Patch,
+        wrapSafe(
+            "PATCH /task",
+            std::function<QHttpServerResponse(
+                const QHttpServerRequest &,
+                const QString &)>([this, &parseUuidFromQuery](
+                                      const QHttpServerRequest &request,
+                                      const QString &requestId) {
+                qInfo(appHttp) << "[PATCH] /task"
+                               << "url:" << request.url().toString()
+                               << "bytes=" << request.body().size()
+                               << "| requestId=" << requestId;
+
+                QUuid taskId;
+                QString parseError;
+                if (!parseUuidFromQuery(request, taskId, parseError)) {
+                    return makeApiError(QHttpServerResponse::StatusCode::BadRequest,
+                                        parseError, "bad_request", {}, requestId);
+                }
+
+                const auto current = m_service->getTaskById(taskId);
+                if (!current) {
+                    return makeApiError(
+                        QHttpServerResponse::StatusCode::NotFound,
+                        QString("Task with id=%1 not found")
+                            .arg(taskId.toString(QUuid::WithoutBraces)),
+                        "not_found",
+                        QJsonObject{{"id", taskId.toString(QUuid::WithoutBraces)}},
+                        requestId);
+                }
+
+                QString bodyErr;
+                const auto body = parseBodyObject(request, &bodyErr);
+                if (!body) {
+                    return makeApiError(QHttpServerResponse::StatusCode::BadRequest,
+                                        "Invalid JSON: " + bodyErr, "bad_request",
+                                        {}, requestId);
+                }
+
+                Task patched = *current;
+                applyTaskPatch(
+                    patched,
+                    *body);
+
+                if (!m_service->updateTask(taskId, patched)) {
+                    return makeApiError(
+                        QHttpServerResponse::StatusCode::InternalServerError,
+                        "Update failed", "internal_error",
+                        QJsonObject{{"id", taskId.toString(QUuid::WithoutBraces)}},
+                        requestId);
+                }
+
+                const auto updated = m_service->getTaskById(taskId);
+                return makeApiOk(
+                    "Task updated",
+                    QJsonObject{
+                                {"task", (updated ? updated->toJson() : patched.toJson())}},
+                    requestId);
+            })));
+
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // DELETE /task?id=<uuid>
+    // ─────────────────────────────────────────────────────────────────────────────
+    mirrorRoute(
+        "/task", QHttpServerRequest::Method::Delete,
+        wrapSafe(
+            "DELETE /task",
+            std::function<QHttpServerResponse(const QHttpServerRequest &,
+                                              const QString &)>(
+                [this, &parseUuidFromQuery](const QHttpServerRequest &request,
+                                            const QString &requestId) {
+                    qInfo(appHttp) << "[DELETE] /task"
+                                   << "url:" << request.url().toString()
+                                   << "| requestId=" << requestId;
+
+                    QUuid taskId;
+                    QString parseError;
+                    if (!parseUuidFromQuery(request, taskId, parseError)) {
+                        return makeApiError(
+                            QHttpServerResponse::StatusCode::BadRequest,
+                            parseError, "bad_request", {}, requestId);
+                    }
+
+                    if (!m_service->deleteTask(taskId)) {
+                        return makeApiError(
+                            QHttpServerResponse::StatusCode::NotFound,
+                            "Task not found", "not_found",
+                            QJsonObject{
+                                        {"id", taskId.toString(QUuid::WithoutBraces)}},
+                            requestId);
+                    }
+
+                    return makeApiOk(
+                        "Task deleted",
+                        QJsonObject{
+                                    {"id", taskId.toString(QUuid::WithoutBraces)}},
+                        requestId);
+                })));
+
+    // ─────────────────────────────────────────────────────────────────────────────
     // DELETE /tasks
-    server.route("/tasks", QHttpServerRequest::Method::Delete,
-        [this] {
-            qInfo(appHttp) << "DELETE /tasks (all)";
-            if (!m_service->deleteAll()) {
-                qCritical(appSql) << "Delete all failed";
+    // ─────────────────────────────────────────────────────────────────────────────
+    mirrorRoute(
+        "/tasks", QHttpServerRequest::Method::Delete,
+        wrapSafe(
+            "DELETE /tasks",
+            std::function<QHttpServerResponse(
+                const QString &)>([this](const QString &requestId) {
+                qInfo(appHttp) << "[DELETE] /tasks (all)"
+                               << "| requestId=" << requestId;
 
-                return makeError("Delete all failed", QHttpServerResponse::StatusCode::InternalServerError);
-            }
+                if (!m_service->deleteAll()) {
+                    return makeApiError(
+                        QHttpServerResponse::StatusCode::InternalServerError,
+                        "Delete all failed", "internal_error", {}, requestId);
+                }
 
-        return makeJson(QJsonObject{ { "ok", true } });
-        }
-    );
+                return makeApiOk("All tasks deleted", {}, requestId);
+            })));
 
+    // ─────────────────────────────────────────────────────────────────────────────
     // GET /tags
-    server.route("/tags", QHttpServerRequest::Method::Get,
-        [this](const QHttpServerRequest &req) {
-            qInfo(appHttp) << "GET /tags";
-            QJsonArray arr;
+    // ─────────────────────────────────────────────────────────────────────────────
+    mirrorRoute("/tags", QHttpServerRequest::Method::Get,
+                wrapSafe("GET /tags",
+                         std::function<QHttpServerResponse(const QString &)>(
+                             [this](const QString &requestId) {
+                                 qInfo(appHttp) << "[GET] /tags"
+                                                << "| requestId=" << requestId;
 
-            for (const auto &tag : m_service->getAllTags()) {
-                arr.append(tag.toJson());
-            }
+                                 QJsonArray items;
+                                 const auto allTags = m_service->getAllTags();
+                                 for (const Tag &tag : allTags) {
+                                     items.append(tag.toJson());
+                                 }
 
-            return makeJsonArray(arr);
-        }
-    );
+                                 return makeApiOk(
+                                     "Tags fetched",
+                                     QJsonObject{{"items", items},
+                                                 {"count", items.size()}},
+                                     requestId);
+                             })));
 
-    // POST /tags
-    server.route("/tags", QHttpServerRequest::Method::Post,
-        [this](const QHttpServerRequest &req) {
-            qInfo(appHttp) << "POST /tags bodyBytes=" << req.body().size();
+    // ─────────────────────────────────────────────────────────────────────────────
+    // POST /tag/create
+    // ─────────────────────────────────────────────────────────────────────────────
+    mirrorRoute(
+        "/tag/create", QHttpServerRequest::Method::Post,
+        wrapSafe(
+            "POST /tag/create",
+            std::function<QHttpServerResponse(
+                const QHttpServerRequest &,
+                const QString &)>([this](const QHttpServerRequest &request,
+                                         const QString &requestId) {
+                qInfo(appHttp) << "[POST] /tag/create"
+                               << "bytes=" << request.body().size()
+                               << "| requestId=" << requestId;
 
-            QString perr;
-            auto objOpt = parseBodyObject(req, &perr);
+                QString parseError;
+                const auto body = parseBodyObject(request, &parseError);
+                if (!body) {
+                    return makeApiError(
+                        QHttpServerResponse::StatusCode::BadRequest,
+                        "Invalid JSON: " + parseError, "bad_request", {},
+                        requestId);
+                }
 
-            if (!objOpt) {
-                qWarning(appHttp) << "Invalid JSON:" << perr;
+                Tag tag = Tag::fromJson(*body);
+                if (tag.name.trimmed().isEmpty()) {
+                    return makeApiError(
+                        QHttpServerResponse::StatusCode::BadRequest,
+                        "Field 'name' is required and must be non-empty",
+                        "validation_error", QJsonObject{{"field", "name"}},
+                        requestId);
+                }
 
-                return makeError("Invalid JSON: " + perr, QHttpServerResponse::StatusCode::BadRequest);
-            }
+                const QUuid newId = m_service->addTag(tag);
+                if (newId.isNull()) {
+                    return makeApiError(
+                        QHttpServerResponse::StatusCode::InternalServerError,
+                        "Insert tag failed", "internal_error", {}, requestId);
+                }
 
-            Tag tag = Tag::fromJson(*objOpt);
-            auto id = m_service->addTag(tag);
-            if (id < 0) {
-                qCritical(appSql) << "Insert tag failed";
+                tag.id = newId;
+                return makeApiOk("Tag created",
+                                 QJsonObject{{"tag", tag.toJson()}}, requestId,
+                                 QHttpServerResponse::StatusCode::Created);
+            })));
 
-                return makeError("Insert tag failed", QHttpServerResponse::StatusCode::InternalServerError);
-            }
-
-            tag.id = id;
-            qInfo(appHttp) << "Created tag id=" << id;
-
-            return makeJson(tag.toJson(), QHttpServerResponse::StatusCode::Created);
-        }
-    );
-
-    // Error and empty request handler
-    server.setMissingHandler(&server,
-        [](const QHttpServerRequest &req, QHttpServerResponder &res) {
-            qWarning(appHttp) << "404 no route for"
-            << toString(req.method()) << req.url().toString();
-
-        QJsonObject obj{
-            { "error",  "Not found" },
-            { "path",   req.url().toString() },
-            { "method", toString(req.method()) }
-        };
-
-        QHttpServerResponse r(obj, QHttpServerResponse::StatusCode::NotFound);
-        res.sendResponse(r);
-        }
-    );
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Глобальный 404‑фолбек
+    // ─────────────────────────────────────────────────────────────────────────────
+    server.setMissingHandler(&server, [](const QHttpServerRequest &request,
+                                         QHttpServerResponder &responder) {
+        sendNotFound(responder, request);
+    });
 }

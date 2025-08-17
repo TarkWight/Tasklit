@@ -9,14 +9,15 @@ public:
     explicit SQLiteStorage(const QString &dbPath);
 
     std::vector<Task> getAllTasks() const override;
-    std::optional<Task> getTaskById(qint64 id) const override;
-    qint64 addTask(const Task &task) override;
-    bool updateTask(qint64 id, const Task &task) override;
-    bool deleteTask(qint64 id) override;
+    std::optional<Task> getTaskById(const QUuid& id) const override;
+
+    QUuid addTask(const Task &task) override;
+    bool updateTask(const QUuid &id, const Task &task) override;
+    bool deleteTask(const QUuid &id) override;
     bool deleteAll() override;
 
     std::vector<Tag> getAllTags() const override;
-    qint64 addTag(const Tag& tag) override;
+    QUuid addTag(const Tag& tag) override;
 
 private:
     QSqlDatabase m_db;

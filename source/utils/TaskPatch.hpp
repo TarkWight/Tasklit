@@ -1,31 +1,59 @@
 #ifndef TASKPATCH_HPP
 #define TASKPATCH_HPP
 
-#include "task.hpp"
-#include <QJsonObject>
 #include <QJsonArray>
+#include <QJsonObject>
+#include <QUuid>
 
-inline void applyTaskPatch(Task& t, const QJsonObject& obj) {
+#include "Task.hpp"
+
+inline QVector<QUuid> parseTagIdsFromJsonArray(const QJsonArray &arr) {
+    QVector<QUuid> out;
+    out.reserve(arr.size());
+    for (const QJsonValue &v : arr) {
+        QUuid id;
+        if (v.isString()) {
+            id = QUuid::fromString(v.toString());
+        } else if (v.isObject()) {
+            id = QUuid::fromString(v.toObject().value("id").toString());
+        }
+        if (!id.isNull()) {
+            out.push_back(id);
+        }
+    }
+    return out;
+}
+
+// Применяем частичный патч к Task.
+// Поддерживаем ключи:
+//  - "title": string
+//  - "description": string
+//  - "isCompleted": bool
+//  - "tags": array<string|{id:string}> | null  → полная замена набора тегов
+inline void applyTaskPatch(Task &task, const QJsonObject &obj) {
     if (obj.contains("title")) {
-        t.title = obj.value("title").toString();
+        task.title = obj.value("title").toString();
     }
 
     if (obj.contains("description")) {
-        t.description = obj.value("description").toString();
+        task.description = obj.value("description").toString();
     }
 
-    if (obj.contains("completed")) {
-        t.completed = obj.value("completed").toBool();
+    if (obj.contains("isCompleted")) {
+        task.isCompleted = obj.value("isCompleted").toBool(task.isCompleted);
     }
 
-    if (obj.contains("tags") && obj.value("tags").isArray()) {
-        QList<Tag> newTags;
-        const auto arr = obj.value("tags").toArray();
-        for (const auto& v : arr) {
-            if (!v.isObject()) continue;
-            newTags.append(Tag::fromJson(v.toObject()));
+    if (obj.contains("tags")) {
+        const QJsonValue tagsVal = obj.value("tags");
+        if (tagsVal.isArray()) {
+            task.tags = parseTagIdsFromJsonArray(tagsVal.toArray());
+        } else if (tagsVal.isNull()) {
+            task.tags.clear();
+        } else {
+            // игнорируем некорректный формат, намеренно не меняем текущие теги
         }
-        t.tags = std::move(newTags);
+
+        task.tagsExpanded.reset();
     }
 }
 
