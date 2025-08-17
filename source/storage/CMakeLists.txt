@@ -1,7 +1,7 @@
 add_library(storage
     IStorage.hpp
-    SQLiteStorage.hpp
-    SQLiteStorage.cpp
+    SQLiteStorageImpl.hpp
+    SQLiteStorageImpl.cpp
 )
 
 target_link_libraries(storage

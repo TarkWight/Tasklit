@@ -1,7 +1,7 @@
 find_package(Qt6 REQUIRED COMPONENTS Core Gui)
 
 add_library(utils
-  json_utils.hpp
+  JsonUtils.hpp
   Logger.hpp
   Logger.cpp
   TaskPatch.hpp

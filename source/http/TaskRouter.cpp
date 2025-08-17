@@ -31,7 +31,7 @@ static QUuid parseUuidLoose(const QString &string) {
 
 void TaskRouter::registerRoutes(QHttpServer &server) {
     // ─────────────────────────────────────────────────────────────────────────────
-    // Локальные хелперы
+    // Helpers
     // ─────────────────────────────────────────────────────────────────────────────
     const auto parseUuidFromQuery = [](const QHttpServerRequest &request,
                                        QUuid &outId,

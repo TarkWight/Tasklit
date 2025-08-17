@@ -1,8 +1,8 @@
 find_package(Qt6 REQUIRED COMPONENTS Core Gui)
 
 add_library(model
-  task.hpp
-  tag.hpp
+  Task.hpp
+  Tag.hpp
 )
 
 target_link_libraries(model PUBLIC
