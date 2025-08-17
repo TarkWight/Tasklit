@@ -13,7 +13,7 @@ Q_LOGGING_CATEGORY(appHttp, "tasklit.http")
 Q_LOGGING_CATEGORY(appSql,  "tasklit.sql")
 
 static QFile* g_logFile = nullptr;
-static QMutex g_logMutex;
+QMutex g_logMutex;
 
 static void messageHandler(QtMsgType type, const QMessageLogContext& ctx, const QString& msg)
 {
